@@ -144,7 +144,7 @@ export async function generatePdfFromImages(pages: ScannedPageData[]): Promise<B
     `trailer\n<<\n  /Size ${totalObjects + 1}\n  /Root 1 0 R\n>>\nstartxref\n${xrefOffset}\n%%EOF\n`
   );
 
-  return new Blob(chunks, { type: 'application/pdf' });
+  return new Blob(chunks as any, { type: 'application/pdf' });
 }
 
 // Convert any canvas or non-JPEG data URL into JPEG for DCTDecode
