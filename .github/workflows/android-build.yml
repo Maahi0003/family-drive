@@ -47,6 +47,20 @@ jobs:
           npm install --no-save @capacitor/core @capacitor/cli @capacitor/android
           npx cap add android || true
           npx cap sync android
+          echo "android.enableJetifier=true" >> android/gradle.properties
+          cat << 'EOF' >> android/app/build.gradle
+
+          dependencies {
+              modules {
+                  module("org.jetbrains.kotlin:kotlin-stdlib-jdk7") {
+                      replacedBy("org.jetbrains.kotlin:kotlin-stdlib", "inlined into kotlin-stdlib")
+                  }
+                  module("org.jetbrains.kotlin:kotlin-stdlib-jdk8") {
+                      replacedBy("org.jetbrains.kotlin:kotlin-stdlib", "inlined into kotlin-stdlib")
+                  }
+              }
+          }
+          EOF
 
       - name: Build Android APK
         run: |
