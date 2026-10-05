@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "jetro": {
+      "type": "stdio",
+      "command": "C:\\Users\\hp\\.jetro\\runtime\\node-win32-x64.exe",
+      "args": [
+        "C:\\Users\\hp\\.jetro\\mcp-server\\index.js"
+      ],
+      "env": {
+        "JET_WORKSPACE": "g:\\My Drive\\HP 15s\\LLM\\Antigravity\\projects\\drive app",
+        "JET_API_URL": "https://api.jetro.ai",
+        "PATH": "C:\\Users\\hp\\.jetro\\runtime;"
+      }
+    }
+  }
+}

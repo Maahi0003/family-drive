@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  familydrive:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: familydrive:v1.0.0
+    container_name: familydrive-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=file:/app/prisma/dev.db
+      - JWT_SECRET=change-this-to-a-very-secure-random-32-character-secret-key-prod
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+      # Optional: Google Drive OAuth credentials (can be added via .env)
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:3000/api/auth/google/callback}
+    volumes:
+      - familydrive-db:/app/prisma
+      - familydrive-uploads:/app/public/uploads
+
+volumes:
+  familydrive-db:
+    name: familydrive_data
+  familydrive-uploads:
+    name: familydrive_uploads

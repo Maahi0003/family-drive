@@ -1,0 +1,118 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id              String         @id @default(cuid())
+  email           String         @unique
+  name            String
+  passwordHash    String
+  avatarUrl       String?
+  createdAt       DateTime       @default(now())
+  
+  memberships     FamilyMember[]
+  createdFamilies Family[]       @relation("FamilyOwner")
+  activities      ActivityLog[]
+  uploadedFiles   VirtualDriveFile[]
+  notifications   Notification[]
+}
+
+model Family {
+  id                  String         @id @default(cuid())
+  name                String
+  description         String?
+  inviteCode          String         @unique
+  ownerId             String
+  owner               User           @relation("FamilyOwner", fields: [ownerId], references: [id])
+  
+  // Google Drive Settings
+  driveConnected      Boolean        @default(false)
+  driveEmail          String?
+  driveRootFolderId   String?        // Target folder in Google Drive
+  driveRootFolderName String?        // Display name of the folder
+  googleRefreshToken  String?        // OAuth refresh token for background Drive operations
+  
+  // Permissions & Policies
+  allowMemberDelete   Boolean        @default(true) // Admin can toggle this
+  
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  
+  members             FamilyMember[]
+  activities          ActivityLog[]
+  virtualFiles        VirtualDriveFile[]
+  broadcasts          SystemBroadcast[]
+}
+
+model FamilyMember {
+  id        String   @id @default(cuid())
+  familyId  String
+  userId    String
+  role      String   @default("MEMBER") // "ADMIN" or "MEMBER"
+  joinedAt  DateTime @default(now())
+  
+  family    Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([familyId, userId])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  familyId   String
+  userId     String
+  action     String   // "UPLOAD" | "DELETE" | "CREATE_FOLDER" | "JOIN" | "SETTINGS_UPDATE"
+  targetName String
+  createdAt  DateTime @default(now())
+
+  family     Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VirtualDriveFile {
+  id          String   @id @default(cuid())
+  familyId    String
+  name        String
+  description String?
+  mimeType    String
+  size        Int      @default(0)
+  parentId    String?  // null for root folder
+  isFolder    Boolean  @default(false)
+  driveFileId String?  // Corresponding Google Drive ID if synced
+  contentPath String?  // Local file storage path if uploaded in demo/local mode
+  contentData String?  // Small preview data or base64 if needed
+  uploaderId  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  family      Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  uploader    User     @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+}
+
+model SystemBroadcast {
+  id             String    @id @default(cuid())
+  title          String
+  message        String
+  severity       String    @default("info") // "info" | "warning" | "success"
+  targetFamilyId String?
+  createdAt      DateTime  @default(now())
+
+  family         Family?   @relation(fields: [targetFamilyId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  severity  String   @default("info") // "info" | "warning" | "success"
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
