@@ -4,16 +4,15 @@ const bcrypt = require('bcryptjs');
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding FamilyDrive database with sample dataset...');
+  console.log('Checking FamilyDrive database for existing data...');
 
-  // Clean existing records if any
-  await prisma.notification.deleteMany();
-  await prisma.systemBroadcast.deleteMany();
-  await prisma.activityLog.deleteMany();
-  await prisma.virtualDriveFile.deleteMany();
-  await prisma.familyMember.deleteMany();
-  await prisma.family.deleteMany();
-  await prisma.user.deleteMany();
+  const userCount = await prisma.user.count();
+  if (userCount > 0) {
+    console.log('Database already initialized with ' + userCount + ' users. Skipping seed.');
+    return;
+  }
+
+  console.log('First-time setup: Seeding FamilyDrive database with sample demo dataset...');
 
   const passwordHash = await bcrypt.hash('password123', 10);
 

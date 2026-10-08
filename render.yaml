@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: family-drive
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /api/app/version
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        value: file:/app/prisma/dev.db
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NEXT_PUBLIC_APP_URL
+        fromService:
+          type: web
+          name: family-drive
+          property: host
