@@ -35,6 +35,8 @@ model Family {
   driveEmail          String?
   driveRootFolderId   String?        // Target folder in Google Drive
   driveRootFolderName String?        // Display name of the folder
+  googleClientId      String?        // Client-side configured OAuth Client ID
+  googleClientSecret  String?        // Client-side configured OAuth Client Secret
   googleRefreshToken  String?        // OAuth refresh token for background Drive operations
   
   // Permissions & Policies

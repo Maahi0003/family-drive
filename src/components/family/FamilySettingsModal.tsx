@@ -14,6 +14,14 @@ import {
   Trash2,
   ExternalLink,
   Info,
+  Upload,
+  Key,
+  FileCode,
+  CheckCircle2,
+  AlertCircle,
+  Unlink,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { FamilySummary, MemberItem } from '@/types';
 
@@ -44,12 +52,27 @@ export function FamilySettingsModal({
   const [regenerating, setRegenerating] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Client-Side Google Drive Credentials State
+  const [driveConfigured, setDriveConfigured] = useState(false);
+  const [hasCustomCredentials, setHasCustomCredentials] = useState(false);
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [redirectUri, setRedirectUri] = useState('');
+  const [uploadedJsonName, setUploadedJsonName] = useState('');
+  const [showManualInputs, setShowManualInputs] = useState(false);
+  const [savingCredentials, setSavingCredentials] = useState(false);
+  const [disconnectingDrive, setDisconnectingDrive] = useState(false);
+  const [copiedRedirectUri, setCopiedRedirectUri] = useState(false);
+  const [driveEmail, setDriveEmail] = useState('');
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
+
   useEffect(() => {
     if (family && isOpen) {
       setName(family.name);
       setDescription(family.description || '');
       setAllowMemberDelete(family.allowMemberDelete);
       setInviteCode(family.inviteCode);
+      setDriveEmail(family.driveEmail || '');
       fetchMembers();
       fetchFullDetails();
     }
@@ -64,9 +87,23 @@ export function FamilySettingsModal({
         setDriveFolderId(data.family.driveRootFolderId || '');
         setDriveFolderName(data.family.driveRootFolderName || '');
         setAllowMemberDelete(data.family.allowMemberDelete);
+        setDriveEmail(data.family.driveEmail || '');
+      }
+
+      // Check Google OAuth configuration status
+      const authRes = await fetch(`/api/google/auth-url?familyId=${family.id}`);
+      const authData = await authRes.json();
+      setDriveConfigured(Boolean(authData.configured));
+      setRedirectUri(
+        authData.redirectUri ||
+          (typeof window !== 'undefined' ? `${window.location.origin}/api/google/callback` : '')
+      );
+      setHasCustomCredentials(Boolean(authData.hasCustomCredentials));
+      if (authData.clientId) {
+        setClientId(authData.clientId);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Fetch full details error:', e);
     }
   };
 
@@ -97,6 +134,13 @@ export function FamilySettingsModal({
     navigator.clipboard.writeText(link);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  const handleCopyRedirectUri = () => {
+    const uri = redirectUri || (typeof window !== 'undefined' ? `${window.location.origin}/api/google/callback` : '');
+    navigator.clipboard.writeText(uri);
+    setCopiedRedirectUri(true);
+    setTimeout(() => setCopiedRedirectUri(false), 2000);
   };
 
   const handleRegenerateCode = async () => {
@@ -143,6 +187,88 @@ export function FamilySettingsModal({
     }
   };
 
+  // Upload client_secret.json handler
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadedJsonName(file.name);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        setSavingCredentials(true);
+        setMessage(null);
+        const rawContent = evt.target?.result as string;
+
+        const res = await fetch('/api/google/credentials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            familyId: family.id,
+            jsonContent: rawContent,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to parse and save credentials');
+        }
+
+        setDriveConfigured(true);
+        setHasCustomCredentials(true);
+        if (data.clientId) setClientId(data.clientId);
+        setMessage({
+          type: 'success',
+          text: `Success! Loaded credentials from "${file.name}". You can now connect your Google Account below!`,
+        });
+        onUpdate();
+      } catch (err: any) {
+        setMessage({ type: 'error', text: err.message });
+      } finally {
+        setSavingCredentials(false);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Save manual client ID & secret handler
+  const handleSaveManualCredentials = async () => {
+    if (!clientId.trim() || !clientSecret.trim()) {
+      setMessage({ type: 'error', text: 'Please enter both Client ID and Client Secret' });
+      return;
+    }
+
+    try {
+      setSavingCredentials(true);
+      setMessage(null);
+      const res = await fetch('/api/google/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          familyId: family.id,
+          clientId: clientId.trim(),
+          clientSecret: clientSecret.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save credentials');
+
+      setDriveConfigured(true);
+      setHasCustomCredentials(true);
+      setMessage({
+        type: 'success',
+        text: 'Google credentials saved successfully! Click "Connect Google Account" to authorize.',
+      });
+      onUpdate();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setSavingCredentials(false);
+    }
+  };
+
+  // Connect via OAuth
   const handleConnectGoogleDrive = async () => {
     try {
       const res = await fetch(`/api/google/auth-url?familyId=${family.id}`);
@@ -150,12 +276,41 @@ export function FamilySettingsModal({
       if (data.configured && data.authUrl) {
         window.location.href = data.authUrl;
       } else {
-        alert(
-          'Google Cloud OAuth is not yet configured in .env with GOOGLE_CLIENT_ID.\n\nRunning in local Sandbox / Demo Mode with simulated Google Drive storage.'
-        );
+        setShowManualInputs(true);
+        setMessage({
+          type: 'error',
+          text: 'Google OAuth credentials not configured yet. Upload your client_secret.json or enter credentials below.',
+        });
       }
     } catch (err: any) {
       alert('Could not start Google OAuth flow: ' + err.message);
+    }
+  };
+
+  // Disconnect Google Drive
+  const handleDisconnectGoogleDrive = async () => {
+    if (!confirm('Disconnecting will remove Google Drive sync for this family and revert back to Sandbox / Demo mode. Continue?')) {
+      return;
+    }
+
+    try {
+      setDisconnectingDrive(true);
+      setMessage(null);
+      const res = await fetch(`/api/google/credentials?familyId=${family.id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error('Failed to disconnect');
+
+      setDriveConfigured(false);
+      setHasCustomCredentials(false);
+      setDriveEmail('');
+      setMessage({ type: 'success', text: 'Google Drive disconnected. Now running in Sandbox mode.' });
+      onUpdate();
+      fetchFullDetails();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setDisconnectingDrive(false);
     }
   };
 
@@ -269,46 +424,299 @@ export function FamilySettingsModal({
           {/* TAB: GOOGLE DRIVE */}
           {activeTab === 'drive' && (
             <div>
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              {/* Connection Status Card */}
+              <div
+                style={{
+                  padding: '16px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  marginBottom: '20px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Connection Status</span>
                   {family.driveConnected ? (
-                    <span className="badge badge-green">Connected to Google Drive</span>
+                    <span className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <CheckCircle2 size={12} />
+                      Connected to Google Drive
+                    </span>
                   ) : (
-                    <span className="badge badge-indigo">Active Sandbox / Demo Mode</span>
+                    <span className="badge badge-indigo">
+                      {driveConfigured ? 'Ready to Connect' : 'Active Sandbox / Demo Mode'}
+                    </span>
                   )}
                 </div>
 
-                <div
-                  style={{
-                    padding: '14px',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--bg-surface)',
-                    border: '1px solid var(--border-subtle)',
-                    fontSize: '0.85rem',
-                    color: 'var(--text-secondary)',
-                    marginBottom: '16px',
-                  }}
-                >
-                  <p>
-                    {family.driveConnected
-                      ? 'Files and folders created by family members are stored directly in your designated Google Drive folder.'
-                      : 'The app is running in Sandbox / Demo mode. All uploads, folder creations, and downloads work seamlessly. To connect a live Google account, click below.'}
-                  </p>
-                </div>
+                <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: '1.45', margin: 0 }}>
+                  {family.driveConnected ? (
+                    <>
+                      Files and folders uploaded by family members are stored directly in your personal Google Drive account.
+                      {driveEmail && (
+                        <span style={{ display: 'block', marginTop: '6px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Connected Account: {driveEmail}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    'The app is currently running in local Sandbox / Demo Mode. All files and folders work seamlessly. Connect your Google account below to sync real files directly to your Google Drive.'
+                  )}
+                </p>
 
-                {isAdmin && (
-                  <button
-                    onClick={handleConnectGoogleDrive}
-                    className="btn btn-secondary"
-                    style={{ width: '100%', marginBottom: '20px' }}
-                  >
-                    <ExternalLink size={16} />
-                    <span>{family.driveConnected ? 'Reconnect Google Account' : 'Connect Google Account via OAuth'}</span>
-                  </button>
+                {isAdmin && family.driveConnected && (
+                  <div style={{ marginTop: '14px', display: 'flex', gap: '10px' }}>
+                    <button
+                      onClick={handleConnectGoogleDrive}
+                      className="btn btn-secondary btn-sm"
+                    >
+                      <ExternalLink size={14} />
+                      <span>Reconnect</span>
+                    </button>
+                    <button
+                      onClick={handleDisconnectGoogleDrive}
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: 'var(--color-danger)' }}
+                      disabled={disconnectingDrive}
+                    >
+                      <Unlink size={14} />
+                      <span>{disconnectingDrive ? 'Disconnecting...' : 'Disconnect Google Account'}</span>
+                    </button>
+                  </div>
                 )}
               </div>
 
+              {/* ACTION: Connect Google Account via OAuth */}
+              {isAdmin && !family.driveConnected && (
+                <div style={{ marginBottom: '22px' }}>
+                  <button
+                    onClick={handleConnectGoogleDrive}
+                    className="btn btn-primary"
+                    style={{ width: '100%', padding: '14px', fontSize: '0.95rem', fontWeight: 600 }}
+                  >
+                    <ExternalLink size={18} />
+                    <span>Connect Google Account via OAuth</span>
+                  </button>
+                </div>
+              )}
+
+              {/* CLIENT-SIDE SETUP: Upload Credentials JSON or Enter Keys */}
+              {isAdmin && (
+                <div
+                  style={{
+                    padding: '16px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-card)',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Key size={16} style={{ color: 'var(--accent-primary)' }} />
+                      <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>
+                        Google Cloud OAuth Credentials
+                      </span>
+                    </div>
+                    {hasCustomCredentials && (
+                      <span className="badge badge-green" style={{ fontSize: '0.75rem' }}>
+                        Configured
+                      </span>
+                    )}
+                  </div>
+
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: 1.4 }}>
+                    Simply drop the <code style={{ color: 'var(--accent-primary)' }}>client_secret_xxx.json</code> file you downloaded from Google Cloud Console, or enter your Client ID & Secret directly.
+                  </p>
+
+                  {/* 1-Click Upload JSON Button */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <label
+                      htmlFor="google-json-upload"
+                      className="btn btn-secondary"
+                      style={{
+                        width: '100%',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        padding: '12px',
+                        border: '1px dashed var(--accent-primary)',
+                      }}
+                    >
+                      <Upload size={16} style={{ color: 'var(--accent-primary)' }} />
+                      <span>
+                        {uploadedJsonName ? `Uploaded: ${uploadedJsonName}` : 'Upload client_secret.json'}
+                      </span>
+                    </label>
+                    <input
+                      id="google-json-upload"
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={handleFileUpload}
+                      style={{ display: 'none' }}
+                    />
+                  </div>
+
+                  {/* Toggle Manual Entry */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowManualInputs(!showManualInputs)}
+                      className="btn btn-ghost btn-sm"
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '0.8rem',
+                        color: 'var(--text-secondary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span>{showManualInputs ? 'Hide Manual Inputs' : 'Or enter Client ID & Secret manually'}</span>
+                      {showManualInputs ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+
+                    {showManualInputs && (
+                      <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label className="form-label" style={{ fontSize: '0.8rem' }}>Client ID</label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="xxx.apps.googleusercontent.com"
+                            value={clientId}
+                            onChange={(e) => setClientId(e.target.value)}
+                            style={{ fontSize: '0.82rem' }}
+                          />
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label className="form-label" style={{ fontSize: '0.8rem' }}>Client Secret</label>
+                          <input
+                            type="password"
+                            className="form-input"
+                            placeholder="GOCSPX-xxxxxxxxxxxxxxxx"
+                            value={clientSecret}
+                            onChange={(e) => setClientSecret(e.target.value)}
+                            style={{ fontSize: '0.82rem' }}
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleSaveManualCredentials}
+                          className="btn btn-primary btn-sm"
+                          disabled={savingCredentials}
+                          style={{ alignSelf: 'flex-start', marginTop: '4px' }}
+                        >
+                          {savingCredentials ? 'Saving...' : 'Save Credentials'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Authorized Redirect URI Helper Box */}
+                  <div
+                    style={{
+                      marginTop: '16px',
+                      padding: '10px 12px',
+                      background: 'var(--bg-surface)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border-subtle)',
+                      fontSize: '0.78rem',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        Authorized Redirect URI in Google Cloud Console:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyRedirectUri}
+                        className="btn btn-ghost btn-sm"
+                        style={{ padding: '2px 6px', fontSize: '0.75rem', height: 'auto' }}
+                      >
+                        {copiedRedirectUri ? <Check size={12} /> : <Copy size={12} />}
+                        <span>{copiedRedirectUri ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    </div>
+                    <code
+                      style={{
+                        display: 'block',
+                        wordBreak: 'break-all',
+                        color: 'var(--accent-primary)',
+                        padding: '4px 6px',
+                        background: 'rgba(0,0,0,0.2)',
+                        borderRadius: '4px',
+                      }}
+                    >
+                      {redirectUri || (typeof window !== 'undefined' ? `${window.location.origin}/api/google/callback` : '')}
+                    </code>
+                    <span style={{ display: 'block', color: 'var(--text-muted)', marginTop: '4px' }}>
+                      Add this exact URL in Google Console &gt; APIs &amp; Services &gt; Credentials &gt; OAuth 2.0 Client IDs.
+                    </span>
+                  </div>
+
+                  {/* Collapsible 2-Minute Setup Guide */}
+                  <div style={{ marginTop: '14px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowSetupGuide(!showSetupGuide)}
+                      className="btn btn-ghost btn-sm"
+                      style={{
+                        padding: '4px 6px',
+                        fontSize: '0.78rem',
+                        color: 'var(--accent-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <Info size={13} />
+                      <span>{showSetupGuide ? 'Hide 2-Minute Google Setup Guide' : 'How to get client_secret.json in 2 minutes (Quick Guide)'}</span>
+                      {showSetupGuide ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    </button>
+
+                    {showSetupGuide && (
+                      <div
+                        style={{
+                          marginTop: '8px',
+                          padding: '12px 14px',
+                          background: 'var(--bg-surface)',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: '0.78rem',
+                          color: 'var(--text-secondary)',
+                          lineHeight: '1.5',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <ol style={{ paddingLeft: '18px', margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <li>
+                            Open <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)', textDecoration: 'underline' }}>console.cloud.google.com</a> and create a project (e.g. <i>"Family Drive"</i>).
+                          </li>
+                          <li>
+                            Go to <b>APIs &amp; Services &gt; Library</b>, search for <b>Google Drive API</b> and click <b>Enable</b>.
+                          </li>
+                          <li>
+                            Under <b>APIs &amp; Services &gt; Credentials</b>, click <b>+ Create Credentials &gt; OAuth client ID</b>.
+                            <br />
+                            Select <i>Web application</i>, and in <b>Authorized redirect URIs</b>, paste the copyable URL shown right above.
+                          </li>
+                          <li>
+                            Click <b>Create</b>, then click <b>Download JSON</b> (or copy the Client ID &amp; Secret).
+                          </li>
+                          <li>
+                            Upload that downloaded file using the <b>Upload client_secret.json</b> button above, then click <b>Connect Google Account via OAuth</b>. That&apos;s all!
+                          </li>
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Target Folder ID */}
               {isAdmin && (
                 <div className="form-group">
                   <label className="form-label">Google Drive Target Folder ID</label>

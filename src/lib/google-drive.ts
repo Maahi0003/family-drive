@@ -64,18 +64,52 @@ function loadGoogleCredentials() {
   return { clientId, clientSecret, redirectUri };
 }
 
-export function isGoogleConfigured(): boolean {
+export function parseGoogleCredentialsJson(rawContent: string | object) {
+  try {
+    const parsed = typeof rawContent === 'string' ? JSON.parse(rawContent) : rawContent;
+    const data = parsed.web || parsed.installed || parsed;
+    if (data && (data.client_id || data.clientId)) {
+      return {
+        clientId: String(data.client_id || data.clientId || '').trim(),
+        clientSecret: String(data.client_secret || data.clientSecret || '').trim(),
+        redirectUris: (data.redirect_uris || data.redirectUris || []) as string[],
+      };
+    }
+  } catch (e) {
+    // ignore
+  }
+  return null;
+}
+
+export function isGoogleConfigured(family?: any): boolean {
+  if (family?.googleClientId && family?.googleClientSecret) {
+    return true;
+  }
   const { clientId, clientSecret } = loadGoogleCredentials();
   return Boolean(clientId && clientSecret && clientId !== '' && clientSecret !== '');
 }
 
-export function getOAuth2Client() {
-  const { clientId, clientSecret, redirectUri } = loadGoogleCredentials();
+export function getOAuth2Client(family?: any, redirectUriOverride?: string) {
+  let clientId = family?.googleClientId;
+  let clientSecret = family?.googleClientSecret;
+  let redirectUri = redirectUriOverride;
+
+  if (!clientId || !clientSecret) {
+    const creds = loadGoogleCredentials();
+    clientId = clientId || creds.clientId;
+    clientSecret = clientSecret || creds.clientSecret;
+    if (!redirectUri) redirectUri = creds.redirectUri;
+  }
+
+  if (!redirectUri) {
+    redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/google/callback';
+  }
+
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
-export function getAuthUrl(familyId: string): string {
-  const oauth2Client = getOAuth2Client();
+export function getAuthUrl(familyId: string, family?: any, redirectUriOverride?: string): string {
+  const oauth2Client = getOAuth2Client(family, redirectUriOverride);
   const scopes = [
     'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/userinfo.email',
@@ -98,7 +132,7 @@ export async function getDriveClientForFamily(familyId: string) {
     return null;
   }
 
-  const oauth2Client = getOAuth2Client();
+  const oauth2Client = getOAuth2Client(family);
   oauth2Client.setCredentials({
     refresh_token: family.googleRefreshToken,
   });
@@ -123,7 +157,7 @@ export async function listDriveFiles(
   if (!family) throw new Error('Family not found');
 
   // Real Google Drive integration
-  if (family.driveConnected && family.googleRefreshToken && isGoogleConfigured()) {
+  if (family.driveConnected && family.googleRefreshToken && isGoogleConfigured(family)) {
     try {
       const drive = await getDriveClientForFamily(familyId);
       if (drive) {
@@ -235,7 +269,7 @@ export async function createDriveFolder(
   const family = await db.family.findUnique({ where: { id: familyId } });
   if (!family) throw new Error('Family not found');
 
-  if (family.driveConnected && family.googleRefreshToken && isGoogleConfigured()) {
+  if (family.driveConnected && family.googleRefreshToken && isGoogleConfigured(family)) {
     try {
       const drive = await getDriveClientForFamily(familyId);
       if (drive) {
@@ -304,7 +338,7 @@ export async function uploadDriveFile(
   const family = await db.family.findUnique({ where: { id: familyId } });
   if (!family) throw new Error('Family not found');
 
-  if (family.driveConnected && family.googleRefreshToken && isGoogleConfigured()) {
+  if (family.driveConnected && family.googleRefreshToken && isGoogleConfigured(family)) {
     try {
       const drive = await getDriveClientForFamily(familyId);
       if (drive) {
@@ -398,7 +432,7 @@ export async function updateDriveFile(
   const family = await db.family.findUnique({ where: { id: familyId } });
   if (!family) throw new Error('Family not found');
 
-  if (family.driveConnected && family.googleRefreshToken && isGoogleConfigured()) {
+  if (family.driveConnected && family.googleRefreshToken && isGoogleConfigured(family)) {
     try {
       const drive = await getDriveClientForFamily(familyId);
       if (drive) {
@@ -493,7 +527,7 @@ export async function deleteDriveItem(familyId: string, itemId: string): Promise
     throw new Error('Security Error: Cannot delete the designated root family folder');
   }
 
-  if (family.driveConnected && family.googleRefreshToken && isGoogleConfigured()) {
+  if (family.driveConnected && family.googleRefreshToken && isGoogleConfigured(family)) {
     try {
       const drive = await getDriveClientForFamily(familyId);
       if (drive) {

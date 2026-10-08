@@ -13,7 +13,19 @@ export async function GET(req: Request) {
       return NextResponse.redirect(new URL('/?error=invalid_oauth_response', req.url));
     }
 
-    const oauth2Client = getOAuth2Client();
+    const family = await db.family.findUnique({
+      where: { id: familyId },
+    });
+
+    if (!family) {
+      return NextResponse.redirect(new URL('/?error=family_not_found', req.url));
+    }
+
+    const urlObj = new URL(req.url);
+    const origin = process.env.NEXT_PUBLIC_APP_URL || urlObj.origin;
+    const redirectUri = `${origin}/api/google/callback`;
+
+    const oauth2Client = getOAuth2Client(family, redirectUri);
     const { tokens } = await oauth2Client.getToken(code);
 
     oauth2Client.setCredentials(tokens);
@@ -39,7 +51,7 @@ export async function GET(req: Request) {
     await db.activityLog.create({
       data: {
         familyId,
-        userId: (await db.family.findUnique({ where: { id: familyId } }))?.ownerId || '',
+        userId: family.ownerId || '',
         action: 'SETTINGS_UPDATE',
         targetName: `Connected Google Drive (${driveEmail || 'Account'})`,
       },

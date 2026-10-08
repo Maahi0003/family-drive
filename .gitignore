@@ -42,3 +42,7 @@ public/uploads/*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ide / tools
+.jetro/
+

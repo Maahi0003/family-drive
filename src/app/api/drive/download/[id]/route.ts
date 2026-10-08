@@ -38,7 +38,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     const family = membership.family;
 
     // Real Google Drive download
-    if (family.driveConnected && family.googleRefreshToken && isGoogleConfigured()) {
+    if (family.driveConnected && family.googleRefreshToken && isGoogleConfigured(family)) {
       try {
         const drive = await getDriveClientForFamily(familyId);
         if (drive) {
