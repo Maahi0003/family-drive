@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
-const CURRENT_SERVER_VERSION = '1.0.0';
-const LATEST_RELEASE_VERSION = '1.1.0';
+const CURRENT_SERVER_VERSION = '1.0.1';
+const LATEST_RELEASE_VERSION = '1.0.1';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -15,11 +15,8 @@ export async function GET(req: Request) {
     latestVersion: LATEST_RELEASE_VERSION,
     updateAvailable: hasUpdate,
     mandatory: false,
-    releaseDate: '2026-10-04',
-    downloadUrl:
-      platform === 'android'
-        ? '/downloads/familydrive-v1.1.0.apk'
-        : 'https://github.com/familydrive/app/releases',
+    releaseDate: '2026-10-08',
+    downloadUrl: 'https://github.com/Maahi0003/family-drive/releases/latest',
     changelog: [
       '⚡ High-speed video streaming & audio preview player',
       '📢 In-app developer broadcast notifications',
